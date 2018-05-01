@@ -1,0 +1,127 @@
+module dtp-network {
+
+  namespace "http://cisco.com/dtp-network";
+  prefix dtpn;
+
+  import ietf-inet-types {
+    prefix inet;
+  }
+  import tailf-common {
+    prefix tailf;
+  }
+  import tailf-ncs {
+    prefix ncs;
+  }
+
+  description
+    "Base model for network topology based services that use function objects.  The intent is to re-use the code that
+    is a part of this package without changing it for any given network topology-based service.  Additional 
+    packages should augment this model only where outlined so that the included code can read the model and 
+    apply the function objects (NSO templates) at the right place";
+
+  revision 2017-11-08 {
+    description
+      "Initial revision.";
+  }
+
+  grouping function-template {
+    leaf template {
+      type string;
+      tailf:non-strict-leafref {
+        path "/ncs:packages/ncs:package/ncs:templates";
+      }
+    }
+  }
+  grouping function-object {
+    leaf name {
+      type string;
+    }
+    uses function-template;
+  }
+
+  container dtp {
+    description "Development to Production system";
+    tailf:info "Development to Production system";
+    list network {
+      description "Network service";
+
+      key name;
+      leaf name {
+        description "Name of this network service instance";
+        tailf:info "Unique network service id";
+        type string;
+      }
+
+      uses ncs:service-data;
+      ncs:servicepoint dtp-network-servicepoint;
+
+      list topology {
+        description "The topology (physical, logical, etc.) and its associated policies";
+        key name;
+        leaf name {
+          type string;
+        }
+        list node {
+          key name;
+          leaf name {
+            description "Name of the node in the topology";
+            tailf:info "Name of the node in the topology";
+            type string;
+          }
+          leaf device-name {
+            description "NSO device name";
+            tailf:info "NSO device name";
+            mandatory "true";
+            type string;
+            tailf:non-strict-leafref {
+              path "/ncs:devices/ncs:device/ncs:name";
+            }
+          }
+          container function-objects {}
+        }
+        list link {
+          key name;
+          leaf name {
+            type string;
+          }
+          list side {
+            max-elements 2;
+            key name;
+            leaf name {
+              type enumeration {
+                enum "SIDE-A";
+                enum "SIDE-B";
+              }
+            }
+            leaf node {
+              mandatory "true";
+              type leafref {
+                path "../../../node/name";
+              }
+            }
+            container side-type {
+              choice side-type {
+              }
+            }
+            container function-objects {}
+          }
+          container function-objects {}
+        }
+        container function-objects {}
+      }
+    }
+    container function-object-definitions {
+      container network {
+        list general {
+          key name;
+          uses function-object;
+        }
+      }
+      container topology {}
+      container node {}
+      container link {
+        container side {}
+      }
+    }
+  }
+}
