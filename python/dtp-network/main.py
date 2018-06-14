@@ -131,7 +131,7 @@ class ServiceCallbacks(Service):
                             foentrynode = ncs.maagic.cd(folist,foentryname)
                             vars.add('FO-NAME', foentrynode.function_object_name)
                             self.log.info('FO-NAME: ', foentrynode.function_object_name)
-                            fonodetemplatestr = '/dtpn:dtp/dtpn:function-object-definitions/dtpn:link'+'{"'+str(link_name)+'"}'+'/dtpn:side'+'{"'+str(side.name)+'"}/'+str(foname)+'{"'+str(foentrynode.function_object_name)+'"}/template'
+                            fonodetemplatestr = '/dtpn:dtp/dtpn:function-object-definitions/dtpn:link/dtpn:side/'+str(foname)+'{"'+str(foentrynode.function_object_name)+'"}/template'
                             self.log.info('Func. Object Template Location: ', fonodetemplatestr)
                             fo_template_name = ncs.maagic.cd(root, fonodetemplatestr)
                             self.log.info('APPLY TEMPLATE: ', fo_template_name)

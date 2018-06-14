@@ -1,6 +1,6 @@
 module dtp-network {
 
-  namespace "http://cisco.com/dtp-network";
+  namespace "http://www.cisco.com/dtp-network";
   prefix dtpn;
 
   import ietf-inet-types {
