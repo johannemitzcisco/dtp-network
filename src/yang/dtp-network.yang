@@ -1,17 +1,10 @@
 module dtp-network {
 
-  namespace "http://cisco.com/dtp-network";
+  namespace "http://www.cisco.com/dtp-network";
   prefix dtpn;
 
-  import ietf-inet-types {
-    prefix inet;
-  }
-  import tailf-common {
-    prefix tailf;
-  }
-  import tailf-ncs {
-    prefix ncs;
-  }
+  import tailf-common { prefix tailf; }
+  import tailf-ncs { prefix ncs; }
 
   description
     "Base model for network topology based services that use function objects.  The intent is to re-use the code that
@@ -52,14 +45,31 @@ module dtp-network {
         type string;
       }
 
-      uses ncs:service-data;
-      ncs:servicepoint dtp-network-servicepoint;
-
       list topology {
         description "The topology (physical, logical, etc.) and its associated policies";
         key name;
         leaf name {
           type string;
+        }
+
+        uses ncs:nano-plan-data;
+        uses ncs:service-data;
+        ncs:servicepoint dtp-topology-servicepoint;
+
+        container deployment-type {
+          choice deployment-type {
+            default model-only;
+            case model-only {
+              container model-only {
+                leaf callback-class {
+                  default "NONE";
+                  type enumeration {
+                    enum "NONE";
+                  }
+                }
+              }
+            }
+          }
         }
         list node {
           key name;
@@ -68,13 +78,28 @@ module dtp-network {
             tailf:info "Name of the node in the topology";
             type string;
           }
-          leaf device-name {
-            description "NSO device name";
-            tailf:info "NSO device name";
-            mandatory "true";
-            type string;
-            tailf:non-strict-leafref {
-              path "/ncs:devices/ncs:device/ncs:name";
+          container nso-device {
+            leaf name {
+              description "NSO device name";
+              tailf:info "NSO device name";
+              mandatory "true";
+              type string;
+              tailf:non-strict-leafref {
+                path "/ncs:devices/ncs:device/ncs:name";
+              }
+            }
+          }
+          leaf state {
+            default "modeled";
+            type enumeration {
+              enum "modeled";
+              enum "create";
+              enum "created";
+              enum "delete";
+            }
+          }
+          container class {
+            choice class {
             }
           }
           container function-objects {}
@@ -124,4 +149,76 @@ module dtp-network {
       }
     }
   }
+
+  identity dtp-plan { base ncs:plan-id; }
+  identity deploy-node { base ncs:plan-component-type; }
+  identity create-node { base ncs:plan-state; }
+  identity deploy-netsim-topology { base ncs:plan-component-type; }
+  identity create-topology { base ncs:plan-state; }
+
+  ncs:plan dtpn:dtp-plan {
+    description "Topology Deployment Plan";
+
+    ncs:component-type "ncs:self" {
+      ncs:state "ncs:init";
+      ncs:state "ncs:ready";
+    }   
+
+    ncs:component-type "dtpn:deploy-netsim-topology" {
+      ncs:state "ncs:init";
+      ncs:state "dtpn:create-topology" {
+        ncs:create {
+          ncs:nano-callback; {
+            ncs:monitor "/dtpn:dtp/dtpn:network" {
+              ncs:trigger-expr "boolean($SERVICE)"
+            }
+          }
+        }
+        ncs:delete {
+          ncs:nano-callback;
+        }
+      }
+      ncs:state "ncs:ready";
+    }
+
+    ncs:component-type "dtpn:deploy-node" {
+      ncs:state "ncs:init";
+      ncs:state "dtpn:create-node" {
+        ncs:create {
+          ncs:nano-callback;
+          ncs:monitor "$SERVICE/plan" {
+            ncs:trigger-expr "current()/component[name='create-node']/state[name='ncs:ready']/status = 'not-reached'";
+          }
+        }
+        ncs:delete {
+          ncs:nano-callback;
+        }
+      }
+      ncs:state "ncs:ready";
+    }
+  }
+
+  ncs:behavior-tree dtp-topology-servicepoint {
+    description "DTP Topology Behavior";
+    ncs:plan-ref "dtpn:dtp-plan";
+    ncs:selector {
+      ncs:component "self" {
+        ncs:component-type-ref "ncs:self";
+      }
+      ncs:component "create-netsim-network" {
+        ncs:component-type-ref "dtpn:deploy-netsim-topology";
+      }
+//      ncs:multiplier {
+//        ncs:selected-nodeset "/node" {
+//          ncs:variable "NODE" {
+//            ncs:value-expr "current()/name";
+//          }
+//        }
+//        ncs:component "{$NODE}" {
+//          ncs:component-type-ref "dtpn:deploy-node";
+//        }
+//      }
+    }
+  }
+
 }
