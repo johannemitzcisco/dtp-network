@@ -81,7 +81,7 @@ class ServiceCallbacks(Service):
                         self.log.info('APPLY TEMPLATE: Node: ', node.name, ' Template: ', fo_template_name)
                         if fo_template_name is not None:
                             template.apply(fo_template_name, vars)
-            self.log.info('======= Link Specific Policies =============')
+            self.log.info('======= Link/Side Specific Policies =============')
             for link in topology.link:
                 link_name = link.name
                 self.log.info('Link: ', link_name, ' Path: ', link._path)
@@ -95,7 +95,6 @@ class ServiceCallbacks(Service):
                 #     except AttributeError as error:
                 #         self.log.info('error: ', error)
                 #         pass
-                self.log.info('======= Side Specific Policies =============')
                 for side in link.side:
                     self.log.info('SIDE: ', side.name)
                     self.log.info('NODE-NAME: ', side.node)
@@ -107,6 +106,7 @@ class ServiceCallbacks(Service):
                     vars.add('TOPOLOGY-NAME', topology.name)
                     vars.add('DEVICE-NAME', topology.node[side.node].device_name)
                     vars.add('LINK-NAME', link_name)
+                    vars.add('SIDE-NAME', side.name)
                     vars.add('NODE-NAME', side.node)
                     self.log.info('SERVICE-NAME: ', service.name)
                     self.log.info('TOPOLOGY-NAME:', topology.name)
@@ -123,6 +123,22 @@ class ServiceCallbacks(Service):
                     # fo_template_name = ncs.maagic.cd(root, fonodetemplatestr)
                     # self.log.info('APPLY TEMPLATE: Node: ', side.node, ' Template: ', fo_template_name)
                     # template.apply(fo_template_name, vars)
+                    self.log.info('======= Link Specific Policies =============')
+                    for foname in link.function_objects: # This gets the list of different policy types defined
+                        self.log.info('foname: ', foname)
+                        folist = ncs.maagic.cd(link.function_objects,foname)
+                        for foentryname in folist: # This get each list entry in the policy type
+                            self.log.info('foentryname: ', foentryname)
+                            foentrynode = ncs.maagic.cd(folist,foentryname)
+                            vars.add('FO-NAME', foentrynode.function_object_name)
+                            self.log.info('FO-NAME: ', foentrynode.function_object_name)
+                            fonodetemplatestr = '/dtpn:dtp/dtpn:function-object-definitions/dtpn:link/'+str(foname)+'{"'+str(foentrynode.function_object_name)+'"}/template'
+                            self.log.info('Func. Object Template Location: ', fonodetemplatestr)
+                            fo_template_name = ncs.maagic.cd(root, fonodetemplatestr)
+                            self.log.info('APPLY TEMPLATE: ', fo_template_name)
+                            if fo_template_name is not None:
+                                template.apply(fo_template_name, vars)
+                    self.log.info('======= Side Specific Policies =============')
                     for foname in side.function_objects: # This gets the list of different policy types defined
                         self.log.info('foname: ', foname)
                         folist = ncs.maagic.cd(side.function_objects,foname)
@@ -131,7 +147,7 @@ class ServiceCallbacks(Service):
                             foentrynode = ncs.maagic.cd(folist,foentryname)
                             vars.add('FO-NAME', foentrynode.function_object_name)
                             self.log.info('FO-NAME: ', foentrynode.function_object_name)
-                            fonodetemplatestr = '/dtpn:dtp/dtpn:function-object-definitions/dtpn:link'+'{"'+str(link_name)+'"}'+'/dtpn:side'+'{"'+str(side.name)+'"}/'+str(foname)+'{"'+str(foentrynode.function_object_name)+'"}/template'
+                            fonodetemplatestr = '/dtpn:dtp/dtpn:function-object-definitions/dtpn:link/dtpn:side/'+str(foname)+'{"'+str(foentrynode.function_object_name)+'"}/template'
                             self.log.info('Func. Object Template Location: ', fonodetemplatestr)
                             fo_template_name = ncs.maagic.cd(root, fonodetemplatestr)
                             self.log.info('APPLY TEMPLATE: ', fo_template_name)
