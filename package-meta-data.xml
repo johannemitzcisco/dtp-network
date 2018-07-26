@@ -10,9 +10,17 @@
   </required-package>
 
   <component>
-    <name>Topology</name>
+    <name>DTPTopology</name>
     <application>
       <python-class-name>dtp_network.DTPTopology.Topology</python-class-name>
     </application>
   </component>
+
+  <component>
+    <name>DTPService</name>
+    <application>
+      <python-class-name>dtp_network.DTPService.Main</python-class-name>
+    </application>
+  </component>
+
 </ncs-package>

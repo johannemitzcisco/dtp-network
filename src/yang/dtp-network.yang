@@ -45,6 +45,15 @@ module dtp-network {
         type string;
       }
 
+      list node {
+        key name;
+        leaf name {
+          description "Name of the node in the network";
+          tailf:info "Name of the node in the network";
+          type string;
+        }
+      }
+
       list topology {
         description "The topology (physical, logical, etc.) and its associated policies";
         key name;
@@ -52,31 +61,40 @@ module dtp-network {
           type string;
         }
 
-        uses ncs:nano-plan-data;
+//        uses ncs:nano-plan-data;
         uses ncs:service-data;
-        ncs:servicepoint dtp-topology-servicepoint;
+//        ncs:servicepoint dtp-topology-servicepoint;
+        ncs:servicepoint dtp-network-servicepoint;
 
-        container deployment-type {
-          choice deployment-type {
-            default model-only;
-            case model-only {
-              container model-only {
-                leaf callback-class {
-                  default "NONE";
-                  type enumeration {
-                    enum "NONE";
-                  }
-                }
-              }
+        list deployment-target {
+          key name;
+          leaf name {
+            type enumeration {
+              enum "NetSim Local";
             }
           }
+//          choice deployment-target {
+//            default model-only;
+//            case model-only {
+//              container model-only {
+//                leaf callback-class {
+//                  default "NONE";
+//                  type enumeration {
+//                    enum "NONE";
+//                  }
+//                }
+//              }
+//            }
+//          }
         }
         list node {
           key name;
           leaf name {
             description "Name of the node in the topology";
             tailf:info "Name of the node in the topology";
-            type string;
+            type leafref {
+              path "../../../node/name";
+            }
           }
           container nso-device {
             leaf name {
@@ -109,6 +127,12 @@ module dtp-network {
           leaf name {
             type string;
           }
+          leaf type {
+            type enumeration {
+              enum "Single-Sided";
+              enum "Two-Sided";
+            }
+          }
           list side {
             max-elements 2;
             key name;
@@ -129,6 +153,10 @@ module dtp-network {
               }
             }
             container function-objects {}
+          }
+          must "type = 'Two-Sided' or " +
+              "(type = 'Single-Sided' and count(side) = 1)" {
+                error-message "One-Sided Link can only have one side";
           }
           container function-objects {}
         }
@@ -168,10 +196,9 @@ module dtp-network {
       ncs:state "ncs:init";
       ncs:state "dtpn:create-topology" {
         ncs:create {
-          ncs:nano-callback; {
-            ncs:monitor "/dtpn:dtp/dtpn:network" {
-              ncs:trigger-expr "boolean($SERVICE)"
-            }
+          ncs:nano-callback;
+          ncs:monitor "/dtpn:dtp/dtpn:network" {
+            ncs:trigger-expr "boolean($SERVICE)";
           }
         }
         ncs:delete {

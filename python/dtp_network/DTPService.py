@@ -16,135 +16,143 @@ class ServiceCallbacks(Service):
     @Service.create
     def cb_create(self, tctx, root, service, proplist):
         self.log.info('Service create(service=', service._path, ' ', service.name, ')')
-        service_node = service._parent._parent
-        self.log.info("Service Node: ", service_node._path)
+        network_node = service._parent._parent
+        dtp_node = network_node._parent._parent
+        self.log.info("Service Node: ", service._path)
+        self.log.info("Network Node: ", network_node._path)
+        self.log.info("DTP Node: ", dtp_node._path)
         self.log.info("Root Node: ", root._path)
+        self.log.info("Root: ", root.__str__)
 
         # Apply topology templates
         self.log.info('======= Topology Specific Policies =============')
-        for topology in service.topology:
-            deploynode = ncs.maagic.cd(topology.deployment_type, str(topology.deployment_type.deployment_type))
-            self.log.info("Deployment Callback Class: ", deploynode.callback_class)
-            if deploynode.callback_class == 'NONE':
-                self.log.info("Deployment type has no callback, assuming devices are registered with NSO")
-            else:
-                callback_module = importlib.import_module(str(deploynode.callback_class).rsplit('.',1)[0])
-                callback_class = getattr(callback_module, str(deploynode.callback_class).rsplit('.',1)[1])
-                callback = callback_class()
-                callback.create_topology(root, service, topology, self.log)
-            self.log.info('Topology: ', topology.name)
+        template = ncs.template.Template(dtp_node)
+        topology = service
+#        for topology in service.topology:
+        # if deploynode.callback_class == 'NONE':
+        #     self.log.info("Deployment type has no callback, assuming devices are registered with NSO")
+        # else:
+        #     deploynode = ncs.maagic.cd(topology.deployment_type, str(topology.deployment_type.deployment_type))
+        #     self.log.info("Deployment Callback Class: ", deploynode.callback_class)
+        #     callback_module = importlib.import_module(str(deploynode.callback_class).rsplit('.',1)[0])
+        #     callback_class = getattr(callback_module, str(deploynode.callback_class).rsplit('.',1)[1])
+        #     callback = callback_class()
+        #     callback.create_topology(root, service, topology, self.log)
+        self.log.info('Topology: ', topology.name)
+        vars = ncs.template.Variables()
+        for foname in topology.function_objects: # This gets the list of different policy types defined
+            self.log.info('Function Object Name: ', foname)
+            folist = ncs.maagic.cd(topology.function_objects,foname)
+            for foentryname in folist: # This get each list entry in the policy type
+                self.log.info('foentryname: ', foentryname)
+                foentrynode = ncs.maagic.cd(folist,foentryname)
+                vars.add('FO-NAME', foentrynode.function_object_name)
+                fonodetemplatestr = '/dtpn:dtp/dtpn:function-object-definitions/dtpn:topology/'+str(foname)+'{"'+foentrynode.function_object_name+'"}/template'
+                self.log.info('Func. Object Template Location: ', fonodetemplatestr)
+                fo_template_name = ncs.maagic.cd(root, fonodetemplatestr)
+                for node in topology.node:
+                    if node.nso_device.name not in root.devices.device:  # If the node does not exist in NSO then we can't configure it
+                        self.log.info('Node not registered in NSO database')
+                        continue
+                    vars.add('SERVICE-NAME', topology._parent._parent.name)
+                    vars.add('TOPOLOGY-NAME', topology.name)
+                    vars.add('NODE-NAME', node.name)
+                    vars.add('DEVICE-NAME', node.nso_device.name)
+                    vars.add('TEMPLATE-CONTEXT', "/network[name="+topology._parent._parent.name+"]/topology[name="+topology.name+"]/node[name="+node.name+"]/function-objects/banner[function-object-name="+foentrynode.function_object_name+"]")
+                    self.log.info('SERVICE-NAME: ', topology._parent._parent.name)
+                    self.log.info('TOPOLOGY-NAME: ', topology.name)
+                    self.log.info('NODE-NAME: ', node.name)
+                    self.log.info('DEVICE-NAME: ', node.nso_device.name)
+                    self.log.info('TEMPLATE-CONTEXT: ', "/network[name="+topology._parent._parent.name+"]/topology[name="+topology.name+"]/node[name="+node.name+"]/function-objects/banner[function-object-name="+foentrynode.function_object_name+"]")
+                    self.log.info('APPLY TEMPLATE: Node: ', node.name, ' Template: ', fo_template_name)
+#                    template = ncs.template.Template(service, network_node._path)
+                    template.apply(fo_template_name, vars)
+        self.log.info('======= Node Specific Policies =============')
+        for node in topology.node:
+            self.log.info('Topology Node: ', node.name)
+            if node.nso_device.name not in root.devices.device:  # If the node does not exist in NSO then we can't configure it
+                self.log.info('Node not registered in NSO database')
+                continue
             vars = ncs.template.Variables()
-            for foname in topology.function_objects: # This gets the list of different policy types defined
-                self.log.info('Function Object Name: ', foname)
-                folist = ncs.maagic.cd(topology.function_objects,foname)
+            vars.add('SERVICE-NAME', topology._parent._parent.name)
+            vars.add('TOPOLOGY-NAME', topology.name)
+            vars.add('NODE-NAME', node.name)
+            vars.add('DEVICE-NAME', node.nso_device.name)
+            self.log.info('SERVICE-NAME: ', topology._parent._parent.name)
+            self.log.info('TOPOLOGY-NAME:', topology.name)
+            self.log.info('NODE-NAME: ', node.name)
+            self.log.info('DEVICE-NAME: ', node.nso_device.name)
+            for foname in node.function_objects: # This gets the list of different policy types defined
+                self.log.info('foname: ', foname)
+                folist = ncs.maagic.cd(node.function_objects,foname)
                 for foentryname in folist: # This get each list entry in the policy type
                     self.log.info('foentryname: ', foentryname)
                     foentrynode = ncs.maagic.cd(folist,foentryname)
                     vars.add('FO-NAME', foentrynode.function_object_name)
-                    fonodetemplatestr = '/dtpn:dtp/dtpn:function-object-definitions/dtpn:topology/'+str(foname)+'{"'+foentrynode.function_object_name+'"}/template'
+                    self.log.info('FO-NAME: ', foentrynode.function_object_name)
+                    fonodetemplatestr = '/dtpn:dtp/dtpn:function-object-definitions/dtpn:node/'+str(foname)+'{"'+str(foentrynode.function_object_name)+'"}/template'
                     self.log.info('Func. Object Template Location: ', fonodetemplatestr)
                     fo_template_name = ncs.maagic.cd(root, fonodetemplatestr)
-                    for node in topology.node:
-                        if node.nso_device.name not in root.devices.device:  # If the node does not exist in NSO then we can't configure it
-                            self.log.info('Node not registered in NSO database')
-                            continue
-                        vars.add('SERVICE-NAME', service.name)
-                        vars.add('TOPOLOGY-NAME', topology.name)
-                        vars.add('NODE-NAME', node.name)
-                        vars.add('DEVICE-NAME', node.nso_device.name)
-                        self.log.info('SERVICE-NAME: ', service.name)
-                        self.log.info('TOPOLOGY-NAME: ', topology.name)
-                        self.log.info('NODE-NAME: ', node.name)
-                        self.log.info('DEVICE-NAME: ', node.nso_device.name)
-                        self.log.info('APPLY TEMPLATE: Node: ', node.name, ' Template: ', fo_template_name)
-                        template = ncs.template.Template(service_node)
+                    self.log.info('APPLY TEMPLATE: Node: ', node.name, ' Template: ', fo_template_name)
+                    if fo_template_name is not None:
                         template.apply(fo_template_name, vars)
-            template = ncs.template.Template(service_node)
-            self.log.info('======= Node Specific Policies =============')
-            for node in topology.node:
-                self.log.info('Topology Node: ', node.name)
-                if node.nso_device.name not in root.devices.device:  # If the node does not exist in NSO then we can't configure it
-                    self.log.info('Node not registered in NSO database')
+        self.log.info('======= Link Specific Policies =============')
+        for link in topology.link:
+            link_name = link.name
+            self.log.info('Link: ', link_name, ' Path: ', link._path)
+            # for linktype in link.type:
+            #     linktypenode = ncs.maagic.cd(link.type,linktype)
+            #     self.log.info('Link Type: ', linktype, ' ', type(linktypenode))
+            #     try:
+            #         if linktypenode is not None and not isinstance(linktypenode, ncs.maagic.Case) and linktypenode.function_object_name is not None:
+            #             self.log.info('Func. Object Name: ', linktypenode.function_object_name)
+            #             break
+            #     except AttributeError as error:
+            #         self.log.info('error: ', error)
+            #         pass
+            self.log.info('======= Side Specific Policies =============')
+            for side in link.side:
+                self.log.info('SIDE: ', side.name)
+                self.log.info('NODE-NAME: ', side.node)
+                if topology.node[side.node].nso_device.name not in root.devices.device: # If the node does not exist in NSO then we can't configure it
+                    self.log.info(side, ' node ', side.node, 'not registered in NSO, skipping...')
                     continue
                 vars = ncs.template.Variables()
-                vars.add('SERVICE-NAME', service.name)
+                vars.add('SERVICE-NAME', topology._parent._parent.name)
                 vars.add('TOPOLOGY-NAME', topology.name)
-                vars.add('NODE-NAME', node.name)
-                vars.add('DEVICE-NAME', node.nso_device.name)
-                self.log.info('SERVICE-NAME: ', service.name)
+                vars.add('DEVICE-NAME', topology.node[side.node].nso_device.name)
+                vars.add('LINK-NAME', link_name)
+                vars.add('NODE-NAME', side.node)
+                self.log.info('SERVICE-NAME: ', topology._parent._parent.name)
                 self.log.info('TOPOLOGY-NAME:', topology.name)
-                self.log.info('NODE-NAME: ', node.name)
-                self.log.info('DEVICE-NAME: ', node.nso_device.name)
-                for foname in node.function_objects: # This gets the list of different policy types defined
+                self.log.info('LINK-NAME: ', link_name)
+                self.log.info('NODE-NAME: ', side.node)
+                self.log.info('DEVICE-NAME: ', topology.node[side.node].nso_device.name)
+                # side.node_role_location = '/dtpn:network/dtpn:network-service{'+topology._parent._parent.name+'}/dtpn:topology{'+topology.name+'}/dtpn:node{'+side.node+'}/dtpn:policies/physical-node-policy-base:role'
+                # self.log.info('Side Node: ', side.node, ' Location: ', side.node_role_location)
+                # side.node_role = ncs.maagic.cd(root, side.node_role_location)
+                # role = side.node_role.keys()[0][0] # Get the first key and get the first element from that tuple
+                # self.log.info('Node role: ', role, ' side.node_role: ', type(side.node_role), ' ', side.node_role.keys(), ' ::: ', type(side.node_role.keys()))
+                # fonodetemplatestr = '/dtpn:network/dtpn:function-object-definitions/dtpn:link/'+linktype+'{"'+linktypenode.function_object_name+'"}/link-policy-base:'+str(role)+'/link-policy-base:template'
+                # self.log.info('Func. Object Node: ', fonodetemplatestr)
+                # fo_template_name = ncs.maagic.cd(root, fonodetemplatestr)
+                # self.log.info('APPLY TEMPLATE: Node: ', side.node, ' Template: ', fo_template_name)
+                # template.apply(fo_template_name, vars)
+                for foname in side.function_objects: # This gets the list of different policy types defined
                     self.log.info('foname: ', foname)
-                    folist = ncs.maagic.cd(node.function_objects,foname)
+                    folist = ncs.maagic.cd(side.function_objects,foname)
                     for foentryname in folist: # This get each list entry in the policy type
                         self.log.info('foentryname: ', foentryname)
                         foentrynode = ncs.maagic.cd(folist,foentryname)
                         vars.add('FO-NAME', foentrynode.function_object_name)
                         self.log.info('FO-NAME: ', foentrynode.function_object_name)
-                        fonodetemplatestr = '/dtpn:dtp/dtpn:function-object-definitions/dtpn:node/'+str(foname)+'{"'+str(foentrynode.function_object_name)+'"}/template'
+#                        fonodetemplatestr = '/dtpn:dtp/dtpn:function-object-definitions/dtpn:link'+'{"'+str(link_name)+'"}'+'/dtpn:side'+'{"'+str(side.name)+'"}/'+str(foname)+'{"'+str(foentrynode.function_object_name)+'"}/template'
+                        fonodetemplatestr = '/dtpn:dtp/dtpn:function-object-definitions/dtpn:link/dtpn:side/'+str(foname)+'{"'+str(foentrynode.function_object_name)+'"}/template'
                         self.log.info('Func. Object Template Location: ', fonodetemplatestr)
                         fo_template_name = ncs.maagic.cd(root, fonodetemplatestr)
-                        self.log.info('APPLY TEMPLATE: Node: ', node.name, ' Template: ', fo_template_name)
+                        self.log.info('APPLY TEMPLATE: ', fo_template_name)
                         if fo_template_name is not None:
                             template.apply(fo_template_name, vars)
-            self.log.info('======= Link Specific Policies =============')
-            for link in topology.link:
-                link_name = link.name
-                self.log.info('Link: ', link_name, ' Path: ', link._path)
-                # for linktype in link.type:
-                #     linktypenode = ncs.maagic.cd(link.type,linktype)
-                #     self.log.info('Link Type: ', linktype, ' ', type(linktypenode))
-                #     try:
-                #         if linktypenode is not None and not isinstance(linktypenode, ncs.maagic.Case) and linktypenode.function_object_name is not None:
-                #             self.log.info('Func. Object Name: ', linktypenode.function_object_name)
-                #             break
-                #     except AttributeError as error:
-                #         self.log.info('error: ', error)
-                #         pass
-                self.log.info('======= Side Specific Policies =============')
-                for side in link.side:
-                    self.log.info('SIDE: ', side.name)
-                    self.log.info('NODE-NAME: ', side.node)
-                    if topology.node[side.node].nso_device.name not in root.devices.device: # If the node does not exist in NSO then we can't configure it
-                        self.log.info(side, ' node ', side.node, 'not registered in NSO, skipping...')
-                        continue
-                    vars = ncs.template.Variables()
-                    vars.add('SERVICE-NAME', service.name)
-                    vars.add('TOPOLOGY-NAME', topology.name)
-                    vars.add('DEVICE-NAME', topology.node[side.node].nso_device.name)
-                    vars.add('LINK-NAME', link_name)
-                    vars.add('NODE-NAME', side.node)
-                    self.log.info('SERVICE-NAME: ', service.name)
-                    self.log.info('TOPOLOGY-NAME:', topology.name)
-                    self.log.info('LINK-NAME: ', link_name)
-                    self.log.info('NODE-NAME: ', side.node)
-                    self.log.info('DEVICE-NAME: ', topology.node[side.node].nso_device.name)
-                    # side.node_role_location = '/dtpn:network/dtpn:network-service{'+service.name+'}/dtpn:topology{'+topology.name+'}/dtpn:node{'+side.node+'}/dtpn:policies/physical-node-policy-base:role'
-                    # self.log.info('Side Node: ', side.node, ' Location: ', side.node_role_location)
-                    # side.node_role = ncs.maagic.cd(root, side.node_role_location)
-                    # role = side.node_role.keys()[0][0] # Get the first key and get the first element from that tuple
-                    # self.log.info('Node role: ', role, ' side.node_role: ', type(side.node_role), ' ', side.node_role.keys(), ' ::: ', type(side.node_role.keys()))
-                    # fonodetemplatestr = '/dtpn:network/dtpn:function-object-definitions/dtpn:link/'+linktype+'{"'+linktypenode.function_object_name+'"}/link-policy-base:'+str(role)+'/link-policy-base:template'
-                    # self.log.info('Func. Object Node: ', fonodetemplatestr)
-                    # fo_template_name = ncs.maagic.cd(root, fonodetemplatestr)
-                    # self.log.info('APPLY TEMPLATE: Node: ', side.node, ' Template: ', fo_template_name)
-                    # template.apply(fo_template_name, vars)
-                    for foname in side.function_objects: # This gets the list of different policy types defined
-                        self.log.info('foname: ', foname)
-                        folist = ncs.maagic.cd(side.function_objects,foname)
-                        for foentryname in folist: # This get each list entry in the policy type
-                            self.log.info('foentryname: ', foentryname)
-                            foentrynode = ncs.maagic.cd(folist,foentryname)
-                            vars.add('FO-NAME', foentrynode.function_object_name)
-                            self.log.info('FO-NAME: ', foentrynode.function_object_name)
-                            fonodetemplatestr = '/dtpn:dtp/dtpn:function-object-definitions/dtpn:link'+'{"'+str(link_name)+'"}'+'/dtpn:side'+'{"'+str(side.name)+'"}/'+str(foname)+'{"'+str(foentrynode.function_object_name)+'"}/template'
-                            self.log.info('Func. Object Template Location: ', fonodetemplatestr)
-                            fo_template_name = ncs.maagic.cd(root, fonodetemplatestr)
-                            self.log.info('APPLY TEMPLATE: ', fo_template_name)
-                            if fo_template_name is not None:
-                                template.apply(fo_template_name, vars)
 
 
     # The pre_modification() and post_modification() callbacks are optional,
@@ -171,18 +179,18 @@ class ServiceCallbacks(Service):
 # NCS_SERVICE_CREATE = 0
 # NCS_SERVICE_DELETE = 2
 # NCS_SERVICE_UPDATE = 1
-        if op == DP.NCS_SERVICE_DELETE:
-            service = ncs.maagic.cd(root, kp)
-            for topology in service.topology:
-                deploynode = ncs.maagic.cd(topology.deployment_type, str(topology.deployment_type.deployment_type))
-                self.log.info("Deployment Callback Class: ", deploynode.callback_class)
-                if deploynode.callback_class == 'NONE':
-                    self.log.info("Deployment type has no callback, assuming devices are registered with NSO")
-                else:
-                    callback_module = importlib.import_module(str(deploynode.callback_class).rsplit('.',1)[0])
-                    callback_class = getattr(callback_module, str(deploynode.callback_class).rsplit('.',1)[1])
-                    callback = callback_class()
-                    callback.delete_topology(root, service, topology, self.log)
+        # if op == DP.NCS_SERVICE_DELETE:
+        #     service = ncs.maagic.cd(root, kp)
+        #     for topology in service.topology:
+        #         deploynode = ncs.maagic.cd(topology.deployment_type, str(topology.deployment_type.deployment_type))
+        #         self.log.info("Deployment Callback Class: ", deploynode.callback_class)
+        #         if deploynode.callback_class == 'NONE':
+        #             self.log.info("Deployment type has no callback, assuming devices are registered with NSO")
+        #         else:
+        #             callback_module = importlib.import_module(str(deploynode.callback_class).rsplit('.',1)[0])
+        #             callback_class = getattr(callback_module, str(deploynode.callback_class).rsplit('.',1)[1])
+        #             callback = callback_class()
+        #             callback.delete_topology(root, service, topology, self.log)
 
 class LoadServiceTemplate(Action):
     @Action.action
