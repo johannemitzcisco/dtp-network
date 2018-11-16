@@ -4,7 +4,7 @@ from ncs.application import Service
 from ncs.dp import Action
 from ncs.maapi import Maapi
 import sys
-from nso_device_management import NSODeviceManagement
+# from nso_device_management import NSODeviceManagement
 import importlib
 import _ncs.dp as DP
 
@@ -13,21 +13,93 @@ import _ncs.dp as DP
 # ------------------------
 class ServiceCallbacks(Service):
 
+    def __init__():
+        virl_nodes = {}
+
+    def build_virl_topology(self, root, vars, template, topology_obj):
+        self.log.info('topology_obj: %s' % (topology_obj._path))
+        if (topology_obj._path.contains("node")):
+            if network.deployment_target[network.node[node.name].deployment_target].type != 'VIRL':
+                return
+            self.virl_nodes[topology_obj.name] = topology_obj
+            topology = node._parent.parent
+            network = topology._parent._parent
+            dtp = network._parent._parent._parent._parent
+            vars.add('NODE-NAME', node.name)
+            vars.add('INDEX', virl_nodes.len())
+        elif (topology_obj._path.contains("link")):
+            link = topology_obj
+            topology = node._parent.parent
+            network = topology._parent._parent
+            dtp = network._parent._parent._parent._parent
+            if (link.side[0] is not None): self.virl_nodes[link.side[0].node] = network.node[link.side[0].node]
+            if (link.side[1] is not None): self.nodes[link.side[1].node] = network.node[link.side[1].node]
+            if (network.deployment_target[nodes[0].deployment_target].type != 'VIRL'
+                    and network.deployment_target[nodes[0].deployment_target].type != 'VIRL'):
+                return
+        virl_server = network.deployment_target[nodes[0].deployment_target].virl_server
+        if (virl_server is None): virl_server = network.deployment_target[nodes[1].deployment_target].virl_server
+
+        if (virl_server is None):
+            self.log.info('Node %s is not marked for Virl Deployment' % (node.name))
+            return
+        dtp = network._parent._parent._parent._parent
+        network = topology._parent._parent
+        template_name = dtp.node_type[network.node[node.name].node_type].virl_device.design_template
+        template.apply(template_name, vars)
+
+    def deploy_virl(virl_server, topology):
+        if (virl_server is None): raise Exception("Bad input, 'virl_server'")
+        if (topology is None): raise Exception("Bad input, 'topology':")
+        if (root.devices.device[virl_server].live_status.simulations.simulation.exists(topology.name)):
+            raise Exception("Topology %s is already deployed, please stop on Virl Server %s" % (topology.name, virl_server))
+        input = root.virl.topology[topology.name].Start_Simulation.get_input()
+        input.virl_server = virl_server
+        output = root.virl.topology[topology.name].Start_Simulation(input)
+
     @Service.create
     def cb_create(self, tctx, root, service, proplist):
         self.log.info('Service create(service=', service._path, ' ', service.name, ')')
-        network_node = service._parent._parent
-        dtp_node = network_node._parent._parent
+        network = service._parent._parent
+        dtp_node = network._parent._parent
         self.log.info("Service Node: ", service._path)
-        self.log.info("Network Node: ", network_node._path)
+        self.log.info("Network Node: ", network._path)
         self.log.info("DTP Node: ", dtp_node._path)
         self.log.info("Root Node: ", root._path)
         self.log.info("Root: ", root.__str__)
 
+        topology = service
+        template = ncs.template.Template(dtp_node)
+        vars = ncs.template.Variables()
+        i = 0
+        # vars.add('NETWORK-NAME', network.name)
+        # vars.add('TOPOLOGY-NAME', topology.name)
+        # self.log.info('======= Create Topology Devices =============')
+
+        # for node in topology.node:
+        #     self.log.info('Topology Node: ', node.name)
+        #     self.build_virl_topology(root, node)
+        #     vars.add('NODE-NAME', node.name)
+        #     if network.deployment_target[network.node[node.name].deployment_target].type == 'VIRL':
+        #         i - i + 1
+        #         vars.add('INDEX', i)
+        #         template_name = dtp_node.node_type[network.node[node.name].node_type].virl_device.design_template
+        #         self.log.info('Virl Template Name: ', node.name)
+        #         template.apply(template_name, vars)
+        #         virl_server = network.deployment_target[network.node[node.name].deployment_target].virl_server
+        #         self.log.info('Virl Server: %s ' % (virl_server))
+        # if (virl_server is not None 
+        #         and not root.devices.device[virl_server].live_status.simulations.simulation.exists(topology.name)):
+        #     input = root.virl.topology[topology.name].Start_Simulation.get_input()
+        #     input.virl_server = virl_server
+        #     output = root.virl.topology[topology.name].Start_Simulation(input)
+
+
+
+
+
         # Apply topology templates
         self.log.info('======= Topology Specific Policies =============')
-        template = ncs.template.Template(dtp_node)
-        topology = service
 #        for topology in service.topology:
         # if deploynode.callback_class == 'NONE':
         #     self.log.info("Deployment type has no callback, assuming devices are registered with NSO")
@@ -65,12 +137,12 @@ class ServiceCallbacks(Service):
                     self.log.info('DEVICE-NAME: ', node.nso_device.name)
                     self.log.info('TEMPLATE-CONTEXT: ', "/network[name="+topology._parent._parent.name+"]/topology[name="+topology.name+"]/node[name="+node.name+"]/function-objects/banner[function-object-name="+foentrynode.function_object_name+"]")
                     self.log.info('APPLY TEMPLATE: Node: ', node.name, ' Template: ', fo_template_name)
-#                    template = ncs.template.Template(service, network_node._path)
+#                    template = ncs.template.Template(service, network._path)
                     template.apply(fo_template_name, vars)
         self.log.info('======= Node Specific Policies =============')
         for node in topology.node:
             self.log.info('Topology Node: ', node.name)
-            if node.nso_device.name not in root.devices.device:  # If the node does not exist in NSO then we can't configure it
+            if network.node[node.name].nso_device.name not in root.devices.device:  # If the node does not exist in NSO then we can't configure it
                 self.log.info('Node not registered in NSO database')
                 continue
             vars = ncs.template.Variables()
@@ -262,7 +334,7 @@ class Main(ncs.application.Application):
         # Service callbacks require a registration for a 'service point',
         # as specified in the corresponding data model.
         #
-        self.register_service('dtp-network-servicepoint', ServiceCallbacks)
+#        self.register_service('dtp-network-servicepoint', ServiceCallbacks)
         self.register_action('loadservicetemplate-action', LoadServiceTemplate)
         self.register_action('testservice-action', TestService)
 

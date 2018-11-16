@@ -5,6 +5,8 @@ module dtp-network {
 
   import tailf-common { prefix tailf; }
   import tailf-ncs { prefix ncs; }
+  import tailf-ncs-ned { prefix ned; }
+  import ietf-inet-types { prefix inet; }
 
   description
     "Base model for network topology based services that use function objects.  The intent is to re-use the code that
@@ -32,47 +34,373 @@ module dtp-network {
     uses function-template;
   }
 
+  grouping authgroup {
+    leaf authgroup {
+      tailf:info "Authentication credentials for the device";
+      type leafref {
+        path "/ncs:devices/ncs:authgroups/ncs:group/ncs:name";
+      }
+      description
+        "The authentication credentials used when connecting
+         to this managed device.
+
+         This leaf must be set for NETCONF and CLI devices, and
+         may be used by generic NEDs, if applicable.";
+    }
+  }
+  grouping ned-type {
+    choice ne-type {
+      case netconf {
+        container netconf {
+          presence "Use NETCONF to talk to the device";
+/*
+          must "../authgroup" {
+            error-message
+              "A NETCONF device must have a authgroup.";
+            tailf:dependency "../authgroup";
+          }
+*/
+          leaf ned-id {
+            tailf:info "The NED Identity";
+            type identityref {
+              base ned:netconf-ned-id;
+            }
+            default ned:netconf;
+            mandatory false;
+          }
+
+        }
+      }
+      case generic {
+        container generic {
+          tailf:info "Use a generic NED to talk to the device";
+          presence "use a generic ned to communicate with the device";
+/*
+          must "../authgroup" {
+            error-message
+              "A Generic device must have a authgroup.";
+            tailf:dependency "../authgroup";
+          }
+*/
+          leaf ned-id {
+            tailf:info "The NED Identity";
+            type identityref {
+              base ned:generic-ned-id;
+            }
+            mandatory true;
+          }
+        }
+      }
+      case cli {
+        container cli {
+          tailf:info "Use CLI to communicate with the device";
+          presence "use CLI to communicate with the device";
+/*
+          must "../authgroup" {
+            error-message
+              "A CLI device must have a authgroup.";
+            tailf:dependency "../authgroup";
+          }
+*/
+          leaf ned-id {
+            tailf:info "The NED Identity";
+            type identityref {
+              base ned:cli-ned-id;
+            }
+            mandatory true;
+          }
+          leaf protocol {
+            tailf:info "The CLI protocol";
+            type enumeration {
+              enum telnet;
+              enum ssh;
+            }
+            default ssh;
+          }
+        }
+      }
+    }
+  }
   container dtp {
     description "Development to Production system";
     tailf:info "Development to Production system";
+
+    list node-type {
+      key "type";
+      leaf type {
+        type string;
+      }
+      container nso-device {
+        uses authgroup;
+        uses ned-type;
+        container authorization {
+          leaf username {
+            mandatory true;
+            type string;
+          }
+          leaf password {
+            mandatory true;
+            type string;
+          }
+          leaf secondary-password {
+            type string;
+          }
+        }
+        uses function-template {
+          refine template {
+            mandatory true;
+            description "Template for registration of device to /devices/device";
+            tailf:info "Template for registration of device to /devices/device";
+          }
+        }
+      }
+      container virl-device {
+        leaf type {
+          type enumeration {
+            enum "SIMPLE";
+          }
+          default "SIMPLE";
+        }
+        leaf subtype {
+          type enumeration {
+            enum "IOS XRv";
+          }
+        }
+        uses function-template {
+          refine template {
+            description "Virl device configuration template for the virl topology node";
+            tailf:info "Virl device configuration template for the virl topology node";
+          }
+        }
+        container day0-config {
+          description "Day 0 configuration, choose either straight config or a template";
+          tailf:info "Day 0 configuration, choose either straight config or a template";
+
+          choice day0-config {
+            case raw-config {
+              leaf raw-config {
+                description "Raw device configuraton text";
+                tailf:info "Raw device configuraton text";
+                type string;
+              }
+            }
+            case template {
+              uses function-template {
+                refine template {
+                  description "Virl device configuration template - sets the 'config' extension on the virl topology node";
+                  tailf:info "Virl device configuration template - sets the 'config' extension on the virl topology node";
+                }
+              }
+            }
+          }
+        }
+      }
+/*
+      container physical-device {
+        presence "Indicates that the device is a physical device";
+        container day0-config {
+          description "Day 0 configuration, choose either straight config or a template";
+          tailf:info "Day 0 configuration, choose either straight config or a template";
+
+          choice day0-config {
+            case raw-config {
+              leaf raw-config {
+                description "Raw device configuraton text";
+                tailf:info "Raw device configuraton text";
+                type string;
+              }
+            }
+            case template {
+              uses function-template {
+                refine template {
+                  description "Virl device configuration template - sets the 'config' extension on the virl topology node";
+                  tailf:info "Virl device configuration template - sets the 'config' extension on the virl topology node";
+                }
+              }
+            }
+          }
+        }
+      }
+*/
+    }
+
     list network {
-      description "Network service";
+      description "Network made up of topologies";
 
       key name;
       leaf name {
-        description "Name of this network service instance";
+        description "Name of this network";
         tailf:info "Unique network service id";
         type string;
       }
 
       list node {
+        description 
+          "List of all the nodes(devices) that will be used in any of 
+          this network's topologies";
         key name;
         leaf name {
-          description "Name of the node in the network";
+          description 
+            "Name of the node in the network.  Nodes listed here are 
+            used across topologies in the network.";
           tailf:info "Name of the node in the network";
           type string;
         }
+        leaf description {
+          description "Description of this node and its purpose";
+          tailf:info "Description of this node and its purpose";
+          type string;
+        }
+        leaf node-type {
+          mandatory "true";
+          type leafref {
+            path "../../../node-type/type";
+          }
+        }
+        leaf deployment-target {
+          mandatory "true";
+          type leafref {
+            path "../../deployment-target/name";
+          }
+        }
+        leaf address {
+          tailf:info "IP Address for the management interface";
+          type inet:host;
+          description
+            "IP address or host name for the management interface on
+             the device. If omitted the same address as configured for
+             this device will be used.";
+        }
+        leaf mask {
+          tailf:info "IP Address for the management interface";
+          type inet:host;
+          description
+            "IP address or host name for the management interface on
+             the device. If omitted the same address as configured for
+             this device will be used.";
+        }
+        leaf port {
+          tailf:info "Port for the management interface";
+          type inet:port-number;
+          description
+            "Port for the management interface on the device.  If this leaf
+             is not configured, NSO will use a default value based on
+             the type of device.  For example, a NETCONF device uses
+             port 830, a CLI device over SSH uses port 22, and a SNMP
+             device uses port 161.";
+        }
+        container nso-device {
+          leaf name {
+            description "NSO device name";
+            tailf:info "NSO device name";
+//              mandatory "true";
+            type string;
+            tailf:non-strict-leafref {
+              path "/ncs:devices/ncs:device/ncs:name";
+            }
+          }
+//          uses authgroup;
+        }
+        uses state-grouping {
+          refine state {
+            config false;
+            description "Current state of this node";
+          }
+        }
+        tailf:action Update-State {
+          tailf:actionpoint update-node-state-action;
+          input {
+            uses state-grouping {
+              refine state {
+                description "New state of this node";
+              }
+            }
+          }
+          output {
+            leaf result {
+              type string; 
+            }
+          }
+        }
+        tailf:action Check-Connectivity {
+          tailf:actionpoint check-node-connectivity-action;
+          input {}
+          output {
+            leaf result {
+              type string; 
+            }
+          }
+        }
+      }
+
+      list deployment-target {
+        key name;
+        leaf name {
+          mandatory "true";
+          type string;
+        }
+        container type {
+          choice type {
+            mandatory "true";
+            case "Model-Only" {
+              container Model-Only {
+                presence "Model only target, nodes with this deployment target never get 
+                          deployed or configured";
+                description "Model only target, nodes with this deployment target never 
+                            get deployed or configured";
+                tailf:info "Model only target, nodes with this deployment target never 
+                            get deployed or configured";
+              }
+            }
+            case "Physical" {
+              container Physical {
+                presence "Node is a physical device";
+                description "Node is a physical device";
+                tailf:info "Node is a physical device";
+              }
+            }
+            case "Virl" {
+              container Virl {
+                description "Virl deployment";
+                tailf:info "Virl deployment";
+                leaf virl-server {
+                  description "NSO Virl server device";
+                  tailf:info "NSO Virl server device";
+                  mandatory "true";
+                  type leafref {
+                    path "/ncs:devices/ncs:device/ncs:name";
+                  }
+                  must "deref(current())/../ncs:module[ncs:name='cisco-virl']" {
+                    tailf:dependency "/ncs:devices/ncs:device/ncs:module/ncs:name";
+                  }
+                }
+                uses function-template {
+                  refine template {
+                    description "Virl topology base configuration template";
+                    tailf:info "Virl topology base configuration template";
+                  }
+                }
+              }
+            }
+          }
+        }
+//        must "count(../deployment-target[type='VIRL'])<2";
       }
 
       list topology {
-        description "The topology (physical, logical, etc.) and its associated policies";
+        description "Topology (physical, logical, etc.) Service.  Modifying topologies can cause changes to the nodes it contains.";
         key name;
         leaf name {
           type string;
         }
+        uses state-grouping;
 
-//        uses ncs:nano-plan-data;
         uses ncs:service-data;
-//        ncs:servicepoint dtp-topology-servicepoint;
-        ncs:servicepoint dtp-network-servicepoint;
+//        ncs:servicepoint dtp-network-servicepoint;
 
-        list deployment-target {
-          key name;
-          leaf name {
-            type enumeration {
-              enum "NetSim Local";
-            }
-          }
+        uses ncs:nano-plan-data;
+        ncs:servicepoint dtp-topology-servicepoint;
+
 //          choice deployment-target {
 //            default model-only;
 //            case model-only {
@@ -86,6 +414,27 @@ module dtp-network {
 //              }
 //            }
 //          }
+        container virl-simulation-status {
+          config false;
+          leaf simulation-name {
+            type string;
+          }
+          uses state-grouping;
+        }
+        tailf:action Update-State {
+          tailf:actionpoint update-topology-virl-state-action;
+          input {
+            uses state-grouping {
+              refine state {
+                description "New state of this node";
+              }
+            }
+          }
+          output {
+            leaf result {
+              type string; 
+            }
+          }
         }
         list node {
           key name;
@@ -96,30 +445,12 @@ module dtp-network {
               path "../../../node/name";
             }
           }
-          container nso-device {
-            leaf name {
-              description "NSO device name";
-              tailf:info "NSO device name";
-              mandatory "true";
-              type string;
-              tailf:non-strict-leafref {
-                path "/ncs:devices/ncs:device/ncs:name";
-              }
-            }
-          }
-          leaf state {
-            default "modeled";
-            type enumeration {
-              enum "modeled";
-              enum "create";
-              enum "created";
-              enum "delete";
-            }
-          }
+/*
           container class {
             choice class {
             }
           }
+*/
           container function-objects {}
         }
         list link {
@@ -161,6 +492,17 @@ module dtp-network {
           container function-objects {}
         }
         container function-objects {}
+
+        tailf:action Track-Virl-Topology-Deployment {
+          tailf:actionpoint VirlTopologyTracker;
+          input {
+          }
+          output {
+            leaf result {
+              type string; 
+            }
+          }
+        }
       }
     }
     container function-object-definitions {
@@ -177,12 +519,63 @@ module dtp-network {
       }
     }
   }
+  grouping state-grouping {
+    leaf state {
+      default "Modeled";
+      type enumeration {
+        enum "Error" {
+          description "Cannot be configured";
+          value "-1";
+        }
+        enum "Modeled" {
+          description "Modeled";
+          value "0";
+        }
+        enum "De-registered" {
+          description "De-registered";
+          value "1";
+        }
+        enum "Registered" {
+          description "Registered";
+          value "2";
+        }
+        enum "Undeploying" {
+          description "Undeploying";
+          value "3";
+        }
+        enum "Deploying" {
+          description "Deploying";
+          value "4";
+        }
+        enum "Deployed" {
+          description "Deployed";
+          value "5";
+        }
+        enum "Ready" {
+          description "Ready for configuration";
+          value "6";
+        }
+        enum "Configured" {
+          description "Configured";
+          value "7";
+        }
+      }
+    }
+  }
 
   identity dtp-plan { base ncs:plan-id; }
-  identity deploy-node { base ncs:plan-component-type; }
-  identity create-node { base ncs:plan-state; }
-  identity deploy-netsim-topology { base ncs:plan-component-type; }
-  identity create-topology { base ncs:plan-state; }
+  identity deploy-virl-nodes { base ncs:plan-component-type; }
+//  identity create-virl-register-tracker { base ncs:plan-state; }
+  identity deploy-virl-topology { base ncs:plan-state; }
+  identity register-nodes { base ncs:plan-component-type; }
+  identity register-nodes-with-NSO { base ncs:plan-state; }
+  identity node-connectivity { base ncs:plan-component-type; }
+  identity check-connectivity { base ncs:plan-state; }
+  identity apply-configuration { base ncs:plan-component-type; }
+  identity topology-function-objects { base ncs:plan-state; }
+  identity node-function-objects { base ncs:plan-state; }
+  identity link-function-objects { base ncs:plan-state; }
+  identity link_side-function-objects { base ncs:plan-state; }
 
   ncs:plan dtpn:dtp-plan {
     description "Topology Deployment Plan";
@@ -190,34 +583,59 @@ module dtp-network {
     ncs:component-type "ncs:self" {
       ncs:state "ncs:init";
       ncs:state "ncs:ready";
-    }   
-
-    ncs:component-type "dtpn:deploy-netsim-topology" {
+    }
+    ncs:component-type "dtpn:register-nodes" {
       ncs:state "ncs:init";
-      ncs:state "dtpn:create-topology" {
+      ncs:state "dtpn:register-nodes-with-NSO" {
         ncs:create {
-          ncs:nano-callback;
-          ncs:monitor "/dtpn:dtp/dtpn:network" {
-            ncs:trigger-expr "boolean($SERVICE)";
-          }
-        }
-        ncs:delete {
           ncs:nano-callback;
         }
       }
       ncs:state "ncs:ready";
     }
-
-    ncs:component-type "dtpn:deploy-node" {
+    ncs:component-type "dtpn:node-connectivity" {
       ncs:state "ncs:init";
-      ncs:state "dtpn:create-node" {
+      ncs:state "dtpn:check-connectivity" {
         ncs:create {
           ncs:nano-callback;
-          ncs:monitor "$SERVICE/plan" {
-            ncs:trigger-expr "current()/component[name='create-node']/state[name='ncs:ready']/status = 'not-reached'";
+        }
+      }
+      ncs:state "ncs:ready";
+    }
+    ncs:component-type "dtpn:deploy-virl-nodes" {
+      ncs:state "ncs:init";
+      ncs:state "dtpn:deploy-virl-topology" {
+        ncs:create {
+          ncs:nano-callback;
+        }
+      }
+      ncs:state "ncs:ready" {
+        ncs:create {
+          ncs:monitor "$SERVICE/virl-simulation-status" {
+            ncs:trigger-expr "current()[state = 'Deployed']";
           }
         }
-        ncs:delete {
+      }
+    }
+    ncs:component-type "dtpn:apply-configuration" {
+      ncs:state "ncs:init";
+      ncs:state "dtpn:topology-function-objects" {
+        ncs:create {
+          ncs:nano-callback;
+        }
+      }
+      ncs:state "dtpn:node-function-objects" {
+        ncs:create {
+          ncs:nano-callback;
+        }
+      }
+      ncs:state "dtpn:link-function-objects" {
+        ncs:create {
+          ncs:nano-callback;
+        }
+      }
+      ncs:state "dtpn:link_side-function-objects" {
+        ncs:create {
           ncs:nano-callback;
         }
       }
@@ -232,20 +650,50 @@ module dtp-network {
       ncs:component "self" {
         ncs:component-type-ref "ncs:self";
       }
-      ncs:component "create-netsim-network" {
-        ncs:component-type-ref "dtpn:deploy-netsim-topology";
+      ncs:component "Register Nodes" {
+        ncs:component-type-ref "dtpn:register-nodes";
       }
-//      ncs:multiplier {
-//        ncs:selected-nodeset "/node" {
-//          ncs:variable "NODE" {
-//            ncs:value-expr "current()/name";
-//          }
-//        }
-//        ncs:component "{$NODE}" {
-//          ncs:component-type-ref "dtpn:deploy-node";
-//        }
-//      }
+      ncs:selector {
+        ncs:create {
+          ncs:monitor "$SERVICE/plan" {
+            ncs:trigger-expr "current()/component[name='Register Nodes']/state[name='ncs:ready']
+                                                                              [status='reached']";
+          }
+        }
+        ncs:component "Deploy Virl Nodes" {
+          ncs:component-type-ref "dtpn:deploy-virl-nodes";
+        }
+      }
+      ncs:selector {
+        ncs:create {
+          ncs:monitor "$SERVICE/plan" {
+            ncs:trigger-expr "current()/component[name='Register Nodes']/state[name='ncs:ready']
+                                                                              [status='reached'] and 
+                              current()/component[name='Deploy Virl Nodes']/state[name='ncs:ready']
+                                                                                 [status='reached']";
+          }
+        }
+        ncs:component "Check Node Connectivity" {
+          ncs:component-type-ref "dtpn:node-connectivity";
+        }
+        ncs:component "Apply Topology Configurations" {
+          ncs:create {
+            ncs:monitor "/dtp/network/node" {
+              ncs:trigger-expr "count(current()/../node[name=$SERVICE/node/name]
+                                                       [state!='Ready']) = 0";
+/*
+              ncs:trigger-expr "current()/component[name='Register Nodes']/state[name='ncs:ready']
+                                                                                [status='reached'] and 
+                                current()/component[name='Deploy Virl Nodes']/state[name='ncs:ready']
+                                                                                   [status='reached'] and 
+                                count(current()/../../../node[name=current()/../node/name]
+                                                       [state!='Ready']) = 0";
+*/
+            }
+          }
+          ncs:component-type-ref "dtpn:apply-configuration";
+        }
+      }
     }
   }
-
 }

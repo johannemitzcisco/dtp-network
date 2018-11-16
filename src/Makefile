@@ -15,11 +15,17 @@ FXS = $(SRC:yang/%.yang=../load-dir/%.fxs)
 
 NCSCPATH   = $(YANGPATH:%=--yangpath %)
 YANGERPATH = $(YANGPATH:%=--path %)
+PYTHONSRC = $(wildcard ../python/dtp_network/*.py)
 
-fxs: $(DIRS) $(FXS)
+fxs: $(PYTHONSRC) $(DIRS) $(FXS)
+.PHONY: fxs
 
 $(DIRS):
 	mkdir -p $@
+
+$(PYTHONSRC): .FORCE
+	python -m py_compile $@
+.PHONY: .FORCE
 
 ../load-dir/%.fxs: yang/%.yang
 	$(NCSC)  `ls $*-ann.yang  > /dev/null 2>&1 && echo "-a $*-ann.yang"` \

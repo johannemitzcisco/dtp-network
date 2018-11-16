@@ -1,0 +1,21 @@
+<!--config-template xmlns="http://tail-f.com/ns/config/1.0"
+                 servicepoint = "dtp-topology-servicepoint"
+                 componenttype = "dtpn:virtual-devices"
+                 state = "dtpn:id-as-virtual-device" -->
+<config xmlns="http://tail-f.com/ns/config/1.0">
+  <dtp xmlns="http://www.cisco.com/dtp-network">
+  <?foreach {node}?>
+  <!--?save-context NODE?>
+  <?set-context-node {..}? -->
+  <network>
+    <!-- name>{name}</name --> 
+    <name>TESTNET</name>
+	  <!-- ?switch-context NODE? -->
+      <node>
+        <name>{name}</name>
+          <state>Building</state>
+      </node>
+  </network>
+  <?end?>
+  </dtp>
+</config>

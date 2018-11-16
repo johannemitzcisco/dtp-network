@@ -4,15 +4,22 @@
   <description>Base package for the Development to Production system</description>
   <ncs-min-version>4.6</ncs-min-version>
 
-  <required-package>
+  <!-- required-package>
     <name>nso-device-management</name>
     <min-version>1.0</min-version>
-  </required-package>
+  </required-package -->
 
   <component>
     <name>DTPTopology</name>
     <application>
-      <python-class-name>dtp_network.DTPTopology.Topology</python-class-name>
+      <python-class-name>dtp_network.DTPTopology.Main</python-class-name>
+    </application>
+  </component>
+
+  <component>
+    <name>DTPVirlTracker</name>
+    <application>
+      <python-class-name>dtp_network.DTPVirlTracker.Main</python-class-name>
     </application>
   </component>
 
